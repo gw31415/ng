@@ -1,0 +1,64 @@
+name: macos
+
+# Fork-only: upstream ng is Linux-only. This job checks that the macOS
+# patches keep building, passing the tests and opening a window.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Install packages
+        run: brew install go sdl3 freetype fontconfig pkgconf neovim
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      - name: Integration tests
+        run: go test -race -tags integration -v ./test/
+
+      - name: Build
+        run: |
+          go build -o ng ./cmd/ng
+          ./ng --version
+
+      # Open a real window on the runner's desktop, drive Neovim through
+      # its socket, take a screenshot and quit.
+      - name: Launch
+        run: |
+          sock="$RUNNER_TEMP/ng-smoke.sock"
+          ./ng -f --listen "$sock" -- --clean -c 'set guifont=Menlo:h14' > ng.out 2>&1 &
+          pid=$!
+          for i in $(seq 50); do [ -S "$sock" ] && break; sleep 0.2; done
+          sleep 2
+          nvim --server "$sock" --remote-send 'iHello macOS 日本語 ✓<Esc>'
+          sleep 1
+          nvim --server "$sock" --remote-expr '"columns=" . &columns . " lines=" . &lines . " guifont=" . &guifont'
+          echo
+          screencapture -x screenshot.png || true
+          nvim --server "$sock" --remote-send ':qa!<CR>'
+          for i in $(seq 50); do kill -0 $pid 2>/dev/null || break; sleep 0.2; done
+          if kill -0 $pid 2>/dev/null; then echo "ng did not exit"; kill $pid; cat ng.out; exit 1; fi
+          wait $pid; status=$?
+          cat ng.out
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-screenshot
+          path: |
+            screenshot.png
+            ng.out
+          if-no-files-found: ignore

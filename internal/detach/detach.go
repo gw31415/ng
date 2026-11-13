@@ -48,7 +48,7 @@ func Ready() {
 		if err != nil {
 			return
 		}
-		syscall.Dup3(int(null.Fd()), 2, 0)
+		dupTo(int(null.Fd()), 2)
 		null.Close()
 	})
 }
@@ -67,7 +67,7 @@ func FromTerminal() bool {
 
 func isTerminal(fd int) bool {
 	var t syscall.Termios
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.TCGETS, uintptr(unsafe.Pointer(&t)))
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), ioctlGetTermios, uintptr(unsafe.Pointer(&t)))
 	return errno == 0
 }
 

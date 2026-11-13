@@ -82,7 +82,9 @@ bool ng_init(void) {
 	// present with vsync, which ng does not), and XWayland made SDL's
 	// startup about 100 ms slower in traces. A SDL_VIDEO_DRIVER
 	// environment variable still takes precedence over this hint.
+#ifdef __linux__
 	SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
+#endif
 	// ng draws the preedit text itself, in the grid with its own CJK
 	// rendering; the input method still draws its candidate window.
 	SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "composition");
