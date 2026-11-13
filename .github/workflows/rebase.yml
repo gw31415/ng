@@ -1,0 +1,70 @@
+name: rebase # fork-only: keep main = Shougo/ng + the fork's own commits
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: rebase
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    outputs:
+      old: ${{ steps.r.outputs.old }}
+      new: ${{ steps.r.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0 }
+      - id: r
+        run: |
+          git fetch https://github.com/Shougo/ng.git main
+          echo "old=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git merge-base --is-ancestor FETCH_HEAD HEAD && exit 0 # up to date
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rebase FETCH_HEAD || { git status >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          git log --oneline FETCH_HEAD..HEAD >> "$GITHUB_STEP_SUMMARY"
+          git bundle create rebased.bundle main
+          echo "new=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - if: steps.r.outputs.new
+        uses: actions/upload-artifact@v4
+        with: { name: rebased, path: rebased.bundle }
+  linux:
+    needs: rebase
+    if: needs.rebase.outputs.new
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: |
+          pacman -Syu --noconfirm --needed git go gcc pkgconf sdl3 freetype2 \
+            fontconfig ttf-dejavu otf-ipafont xorg-fonts-type1 neovim
+      - uses: actions/download-artifact@v4
+        with: { name: rebased }
+      - run: |
+          git clone -q -b main rebased.bundle ng && cd ng
+          go vet ./... && go test -race ./... && go test -race -tags integration ./test/
+  macos:
+    needs: rebase
+    if: needs.rebase.outputs.new
+    runs-on: macos-latest
+    steps:
+      - run: brew install go sdl3 freetype fontconfig pkgconf neovim
+      - uses: actions/download-artifact@v4
+        with: { name: rebased }
+      - run: |
+          git clone -q -b main rebased.bundle ng && cd ng
+          go vet ./... && go test ./... && go test -tags integration ./test/
+          macos/build-app.sh
+  push:
+    needs: [rebase, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      # GITHUB_TOKEN may not push changes to .github/workflows; when upstream
+      # touches them, a REBASE_TOKEN secret (PAT: Contents + Workflows) is needed.
+      - uses: actions/checkout@v4
+        with: { token: "${{ secrets.REBASE_TOKEN || github.token }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: rebased, path: "${{ runner.temp }}" }
+      - run: |
+          git fetch "$RUNNER_TEMP/rebased.bundle" main:rebased
+          git push --force-with-lease=main:${{ needs.rebase.outputs.old }} origin rebased:main

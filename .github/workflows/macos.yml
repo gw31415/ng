@@ -1,0 +1,13 @@
+name: macos # fork-only; macOS runners cost more, so main and by hand only
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - run: brew install go sdl3 freetype fontconfig pkgconf neovim
+      - uses: actions/checkout@v4
+      - run: go vet ./... && go test ./... && go test -tags integration ./test/
+      - run: macos/build-app.sh
