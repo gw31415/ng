@@ -936,6 +936,9 @@ func (a *App) handle(e event) bool {
 			cursor = utf8.RuneCountInString(e.text)
 		}
 		a.preedit = paint.Preedit{Text: e.text, Cursor: cursor, SelLen: e.editLength}
+		// macOS: keys the input method takes send no key event, so a
+		// suppression left by an earlier chord would eat the commit.
+		a.suppressText = false
 		if a.trace != nil {
 			a.tracef(time.Now(), "preedit %q cursor=%d sel=%d", e.text, e.editStart, e.editLength)
 		}
