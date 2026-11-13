@@ -3,9 +3,11 @@ name: macos
 # Fork-only: upstream ng is Linux-only. This job checks that the macOS
 # patches keep building, passing the tests and opening a window.
 
+# Runs on main (after a rebase onto upstream) and by hand, not on every
+# branch push: macOS runners cost more.
 on:
   push:
-  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
