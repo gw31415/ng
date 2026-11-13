@@ -11,7 +11,9 @@
 	<key>CFBundleVersion</key>
 	<string>@SHORT@</string>
 	<key>CFBundleShortVersionString</key>
-	<string>@VERSION@</string>
+	<string>@SHORT@</string>
+	<key>CFBundleGetInfoString</key>
+	<string>ng @VERSION@</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleExecutable</key>

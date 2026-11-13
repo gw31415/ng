@@ -87,6 +87,8 @@ type App struct {
 	verts []C.SDL_Vertex
 	idx   []C.int
 
+	pendingDrops []string // files dropped or opened before attaching
+
 	attached     bool
 	uiEntered    bool // Neovim's UIEnter has fired: the config has run
 	flushed      bool // at least one complete screen has arrived
@@ -329,12 +331,20 @@ func (a *App) attachDone(err error, at time.Time) {
 	}
 	a.attached = true
 	a.markAt(at, "attached")
+	for _, f := range a.pendingDrops {
+		a.drop(f)
+	}
+	a.pendingDrops = nil
 	if a.shown && (a.gridCols != a.scr.Width || a.gridRows != a.scr.Height) {
 		a.nv.TryResize(a.gridCols, a.gridRows)
 	}
 	// Errors from startup files that Neovim could not show in a UI.
 	a.nv.ReportStartupErrors()
 	go a.nv.WarnIfUnsupported()
+}
+
+func (a *App) drop(file string) {
+	a.nv.Notify("nvim_exec_lua", "vim.cmd.drop(vim.fn.fnameescape(...))", []any{file})
 }
 
 // waitingMessage is drawn while Neovim is blocked at a prompt and has not
@@ -876,6 +886,13 @@ func (a *App) flushGlyphs() {
 // handle processes one SDL event and reports whether the window needs to
 // be presented again.
 func (a *App) handle(e event) bool {
+	if e.typ == C.SDL_EVENT_DROP_FILE && !a.attached {
+		// macOS sends the files the app was opened with right at launch.
+		if e.drop != "" {
+			a.pendingDrops = append(a.pendingDrops, e.drop)
+		}
+		return false
+	}
 	if a.nv == nil {
 		return false // not connected yet; the window is still hidden
 	}
@@ -963,7 +980,7 @@ func (a *App) handle(e event) bool {
 		a.mouse(e)
 	case C.SDL_EVENT_DROP_FILE:
 		if e.drop != "" {
-			a.nv.Notify("nvim_exec_lua", "vim.cmd.drop(vim.fn.fnameescape(...))", []any{e.drop})
+			a.drop(e.drop)
 		}
 	}
 	return false
