@@ -82,7 +82,9 @@ bool ng_init(void) {
 	// present with vsync, which ng does not), and XWayland made SDL's
 	// startup about 100 ms slower in traces. A SDL_VIDEO_DRIVER
 	// environment variable still takes precedence over this hint.
+#ifdef __linux__
 	SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
+#endif
 	// ng draws the preedit text itself, in the grid with its own CJK
 	// rendering; the input method still draws its candidate window.
 	SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "composition");
@@ -154,6 +156,9 @@ char *ng_clipboard_text(void) {
 // ng_set_icon sets the window icon from non-premultiplied RGBA pixels.
 // SDL copies them.
 bool ng_set_icon(SDL_Window *w, int width, int height, void *rgba) {
+#ifdef __APPLE__
+	return true; // SDL would replace the Dock icon of ng.app with this one
+#endif
 	SDL_Surface *s = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, rgba, width * 4);
 	if (!s) {
 		return false;

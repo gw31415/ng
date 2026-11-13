@@ -14,6 +14,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -86,6 +87,8 @@ type App struct {
 
 	verts []C.SDL_Vertex
 	idx   []C.int
+
+	pendingDrops []event // macOS sends the files the app is opened with before attaching
 
 	attached     bool
 	uiEntered    bool // Neovim's UIEnter has fired: the config has run
@@ -329,6 +332,10 @@ func (a *App) attachDone(err error, at time.Time) {
 	}
 	a.attached = true
 	a.markAt(at, "attached")
+	for _, e := range a.pendingDrops {
+		a.handle(e)
+	}
+	a.pendingDrops = nil
 	if a.shown && (a.gridCols != a.scr.Width || a.gridRows != a.scr.Height) {
 		a.nv.TryResize(a.gridCols, a.gridRows)
 	}
@@ -552,6 +559,9 @@ func (a *App) dpi() float64 {
 	s := float64(C.SDL_GetWindowDisplayScale(a.win))
 	if s <= 0 {
 		s = 1
+	}
+	if runtime.GOOS == "darwin" {
+		return 72 * s // macOS points
 	}
 	return 96 * s
 }
@@ -876,6 +886,10 @@ func (a *App) flushGlyphs() {
 // handle processes one SDL event and reports whether the window needs to
 // be presented again.
 func (a *App) handle(e event) bool {
+	if e.typ == C.SDL_EVENT_DROP_FILE && !a.attached {
+		a.pendingDrops = append(a.pendingDrops, e)
+		return false
+	}
 	if a.nv == nil {
 		return false // not connected yet; the window is still hidden
 	}
@@ -936,6 +950,7 @@ func (a *App) handle(e event) bool {
 			cursor = utf8.RuneCountInString(e.text)
 		}
 		a.preedit = paint.Preedit{Text: e.text, Cursor: cursor, SelLen: e.editLength}
+		a.suppressText = false // macOS sends no key event for keys the IME takes
 		if a.trace != nil {
 			a.tracef(time.Now(), "preedit %q cursor=%d sel=%d", e.text, e.editStart, e.editLength)
 		}

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key><string>ng-launcher</string>
+	<key>CFBundleIdentifier</key><string>io.github.gw31415.ng</string>
+	<key>CFBundleName</key><string>ng</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleIconFile</key><string>ng</string>
+	<key>CFBundleIconName</key><string>ng</string>
+	<key>NSHighResolutionCapable</key><true/>
+	<key>CFBundleDocumentTypes</key>
+	<array><dict>
+		<key>CFBundleTypeRole</key><string>Editor</string>
+		<key>LSHandlerRank</key><string>Alternate</string>
+		<key>LSItemContentTypes</key><array><string>public.text</string><string>public.data</string></array>
+	</dict></array>
+</dict>
+</plist>
