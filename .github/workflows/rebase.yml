@@ -1,0 +1,32 @@
+name: rebase # fork-only: keep main = Shougo/ng + the fork's own commits
+# release-macos.yml tests, builds and publishes each new main; this only rebases.
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write # to start release-macos.yml
+concurrency: rebase
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      # GITHUB_TOKEN may not push changes to .github/workflows; when upstream
+      # touches them, a REBASE_TOKEN secret (PAT: Contents + Workflows) is needed.
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0, token: "${{ secrets.REBASE_TOKEN || github.token }}" }
+      - run: |
+          git fetch https://github.com/Shougo/ng.git main
+          if ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            old=$(git rev-parse HEAD)
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git rebase FETCH_HEAD || { git status >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+            git log --oneline FETCH_HEAD..HEAD >> "$GITHUB_STEP_SUMMARY"
+            git push --force-with-lease=main:"$old" origin HEAD:main
+          elif [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
+            exit 0 # nothing new; a manual run still asks for a release (skipped if nightly is main)
+          fi
+          gh workflow run release-macos.yml --ref main # GITHUB_TOKEN pushes start no workflows, but may dispatch one
+        env: { GH_TOKEN: "${{ github.token }}" }
