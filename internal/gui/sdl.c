@@ -43,10 +43,15 @@ void ng_flatten(const SDL_Event *e, ng_event *o) {
 	case SDL_EVENT_MOUSE_WHEEL:
 		o->x = e->wheel.x;
 		o->y = e->wheel.y;
+#ifndef __APPLE__
+		// On macOS the deltas already follow the "Natural scrolling"
+		// setting, and FLIPPED only reports that it is on: undoing it
+		// would scroll against the user's choice.
 		if (e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
 			o->x = -o->x;
 			o->y = -o->y;
 		}
+#endif
 		break;
 	}
 }
@@ -159,6 +164,9 @@ char *ng_clipboard_text(void) {
 // ng_set_icon sets the window icon from non-premultiplied RGBA pixels.
 // SDL copies them.
 bool ng_set_icon(SDL_Window *w, int width, int height, void *rgba) {
+#ifdef __APPLE__
+	return true; // SDL would replace the Dock icon of ng.app with this one
+#endif
 	SDL_Surface *s = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, rgba, width * 4);
 	if (!s) {
 		return false;
