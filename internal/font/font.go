@@ -341,9 +341,6 @@ func (s *Set) wides(style Style) []*face {
 // load opens the font fontconfig picks for family (or, with ch != 0 and an
 // empty family, any font containing ch).
 func (s *Set) load(family string, style Style, ch rune, size float64) (*face, error) {
-	if a, ok := familyAliases[family]; ok {
-		family = a
-	}
 	var cfam *C.char
 	if family != "" {
 		cfam = C.CString(family)

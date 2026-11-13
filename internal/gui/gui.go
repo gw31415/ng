@@ -14,6 +14,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -87,7 +88,7 @@ type App struct {
 	verts []C.SDL_Vertex
 	idx   []C.int
 
-	pendingDrops []string // files dropped or opened before attaching
+	pendingDrops []event // macOS sends the files the app is opened with before attaching
 
 	attached     bool
 	uiEntered    bool // Neovim's UIEnter has fired: the config has run
@@ -331,8 +332,8 @@ func (a *App) attachDone(err error, at time.Time) {
 	}
 	a.attached = true
 	a.markAt(at, "attached")
-	for _, f := range a.pendingDrops {
-		a.drop(f)
+	for _, e := range a.pendingDrops {
+		a.handle(e)
 	}
 	a.pendingDrops = nil
 	if a.shown && (a.gridCols != a.scr.Width || a.gridRows != a.scr.Height) {
@@ -341,10 +342,6 @@ func (a *App) attachDone(err error, at time.Time) {
 	// Errors from startup files that Neovim could not show in a UI.
 	a.nv.ReportStartupErrors()
 	go a.nv.WarnIfUnsupported()
-}
-
-func (a *App) drop(file string) {
-	a.nv.Notify("nvim_exec_lua", "vim.cmd.drop(vim.fn.fnameescape(...))", []any{file})
 }
 
 // waitingMessage is drawn while Neovim is blocked at a prompt and has not
@@ -562,6 +559,9 @@ func (a *App) dpi() float64 {
 	s := float64(C.SDL_GetWindowDisplayScale(a.win))
 	if s <= 0 {
 		s = 1
+	}
+	if runtime.GOOS == "darwin" {
+		return 72 * s // macOS points
 	}
 	return 96 * s
 }
@@ -887,10 +887,7 @@ func (a *App) flushGlyphs() {
 // be presented again.
 func (a *App) handle(e event) bool {
 	if e.typ == C.SDL_EVENT_DROP_FILE && !a.attached {
-		// macOS sends the files the app was opened with right at launch.
-		if e.drop != "" {
-			a.pendingDrops = append(a.pendingDrops, e.drop)
-		}
+		a.pendingDrops = append(a.pendingDrops, e)
 		return false
 	}
 	if a.nv == nil {
@@ -953,9 +950,7 @@ func (a *App) handle(e event) bool {
 			cursor = utf8.RuneCountInString(e.text)
 		}
 		a.preedit = paint.Preedit{Text: e.text, Cursor: cursor, SelLen: e.editLength}
-		// macOS: keys the input method takes send no key event, so a
-		// suppression left by an earlier chord would eat the commit.
-		a.suppressText = false
+		a.suppressText = false // macOS sends no key event for keys the IME takes
 		if a.trace != nil {
 			a.tracef(time.Now(), "preedit %q cursor=%d sel=%d", e.text, e.editStart, e.editLength)
 		}
@@ -980,7 +975,7 @@ func (a *App) handle(e event) bool {
 		a.mouse(e)
 	case C.SDL_EVENT_DROP_FILE:
 		if e.drop != "" {
-			a.drop(e.drop)
+			a.nv.Notify("nvim_exec_lua", "vim.cmd.drop(vim.fn.fnameescape(...))", []any{e.drop})
 		}
 	}
 	return false

@@ -1,36 +1,10 @@
 #!/bin/sh
-# Build ng.app (fork-only, macOS). Usage: macos/build-app.sh [OUTDIR]
-# The app links the Homebrew SDL3/FreeType/fontconfig of this machine and
-# starts the nvim found on the login shell's PATH.
+# Builds macos/build/ng.app. Assets.car and ng.icns are compiled from ng.icon (Icon Composer) with
+#   xcrun actool ng.icon --compile . --app-icon ng --platform macosx --minimum-deployment-target 11.0 --output-partial-info-plist /dev/null
 set -eu
-cd "$(dirname "$0")/.."
-out=${1:-macos/build}
-app="$out/ng.app"
-
-go build -o ng ./cmd/ng
-version=$(./ng --version | awk '{print $2}' | sed 's/^v//')
-short=${version%%-*}
-
-mkdir -p "$out"
-rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-sed -e "s/@VERSION@/$version/g" -e "s/@SHORT@/$short/g" macos/Info.plist > "$app/Contents/Info.plist"
-cp macos/ng-launcher "$app/Contents/MacOS/ng-launcher"
-mv ng "$app/Contents/MacOS/ng"
-
-iconset=$(mktemp -d)/ng.iconset
-mkdir -p "$iconset"
-icons=assets/icons/hicolor
-for s in 16 32 128 256 512; do
-	cp "$icons/${s}x${s}/apps/ng.png" "$iconset/icon_${s}x${s}.png"
-done
-cp "$icons/32x32/apps/ng.png" "$iconset/icon_16x16@2x.png"
-cp "$icons/64x64/apps/ng.png" "$iconset/icon_32x32@2x.png"
-cp "$icons/256x256/apps/ng.png" "$iconset/icon_128x128@2x.png"
-cp "$icons/512x512/apps/ng.png" "$iconset/icon_256x256@2x.png"
-iconutil -c icns -o "$app/Contents/Resources/ng.icns" "$iconset"
-rm -rf "$(dirname "$iconset")"
-
-# Ad-hoc signature, required to run on Apple Silicon.
-codesign --force --deep --sign - "$app"
-echo "built $app ($version)"
+cd "$(dirname "$0")"
+c=build/ng.app/Contents
+rm -rf build/ng.app && mkdir -p "$c/MacOS" "$c/Resources"
+go build -o "$c/MacOS/ng" ../cmd/ng
+cp Info.plist "$c/" && cp ng-launcher "$c/MacOS/" && cp Assets.car ng.icns "$c/Resources/"
+codesign --force --sign - build/ng.app

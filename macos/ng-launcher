@@ -1,11 +1,3 @@
 #!/bin/sh
-# Started by Finder/Dock/open(1) with launchd's minimal environment: take
-# PATH (for nvim) and the rest from the user's login shell, start in $HOME,
-# then become ng. Files opened with the app arrive as SDL drop events.
-here=$(cd "$(dirname "$0")" && pwd)
-cd "$HOME" || cd /
-case ${SHELL:-} in
-*/sh | */bash | */zsh | */ksh) sh=$SHELL ;;
-*) sh=/bin/zsh ;; # fish and others: a POSIX login shell still sets PATH
-esac
-exec "$sh" -l -c 'exec "$0" "$@"' "$here/ng" "$@"
+# Apps started from Finder get a minimal PATH: run ng (and nvim) from a login shell, in $HOME.
+exec /bin/zsh -lc 'cd && exec "$0" "$@"' "${0%/*}/ng" "$@"
