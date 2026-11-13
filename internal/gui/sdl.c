@@ -156,6 +156,9 @@ char *ng_clipboard_text(void) {
 // ng_set_icon sets the window icon from non-premultiplied RGBA pixels.
 // SDL copies them.
 bool ng_set_icon(SDL_Window *w, int width, int height, void *rgba) {
+#ifdef __APPLE__
+	return true; // SDL would replace the Dock icon of ng.app with this one
+#endif
 	SDL_Surface *s = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, rgba, width * 4);
 	if (!s) {
 		return false;
