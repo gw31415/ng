@@ -80,6 +80,8 @@ type App struct {
 	verts []C.SDL_Vertex
 	idx   []C.int
 
+	pendingDrops []event // macOS sends the files the app is opened with before attaching
+
 	attached     bool
 	uiEntered    bool // Neovim's UIEnter has fired: the config has run
 	flushed      bool // at least one complete screen has arrived
@@ -328,6 +330,10 @@ func (a *App) attachDone(err error, at time.Time) {
 	}
 	a.attached = true
 	a.markAt(at, "attached")
+	for _, e := range a.pendingDrops {
+		a.handle(e)
+	}
+	a.pendingDrops = nil
 	if a.shown && (a.gridCols != a.scr.Width || a.gridRows != a.scr.Height) {
 		a.nv.TryResize(a.gridCols, a.gridRows)
 	}

@@ -1,0 +1,179 @@
+name: release-macos # fork-only: rolling "nightly" release of a notarized ng.app, like Neovim nightly
+
+# Builds main, signs ng.app with a Developer ID, notarizes and staples it, and
+# only then moves the tag "nightly" to that commit and replaces the asset of the
+# "nightly" release. There are no version numbers: the Cask in
+# gw31415/homebrew-tap uses `version :latest` and never changes.
+#
+# Every three hours, on each push to main and by hand, it first rebases the
+# fork's commit onto Shougo/ng main. A run whose main is already the nightly
+# build stops there.
+#
+# Jobs are split by what they may touch:
+#   rebase    contents: write; runs no upstream code
+#   build     runs upstream code and tests; no secrets
+#   sign      reusable workflow of gw31415/homebrew-tap, which holds the Apple
+#             secrets and signs, notarizes and staples ng.app there
+#   publish   contents: write; moves the tag and replaces the asset
+#   check     installs the published Cask and launches it; no credentials
+
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency: release-macos
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ASSET: ng-macos-arm64.zip
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.r.outputs.commit }}
+    steps:
+      # GITHUB_TOKEN may not push changes to .github/workflows; when upstream
+      # touches them, a REBASE_TOKEN secret (PAT: Contents + Workflows) is needed.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: main, fetch-depth: 0, token: "${{ secrets.REBASE_TOKEN || github.token }}" }
+
+      - name: Rebase onto Shougo/ng, skip if main is already the nightly build
+        id: r
+        run: |
+          set -euo pipefail
+          git fetch https://github.com/Shougo/ng.git main
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            # Nothing to rebase: a scheduled run stops here, so a failed release
+            # is not retried every three hours.
+            [[ "${GITHUB_EVENT_NAME}" != schedule ]] || exit 0
+          else
+            old=$(git rev-parse HEAD)
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git rebase FETCH_HEAD || { git status >>"${GITHUB_STEP_SUMMARY}"; exit 1; }
+            git push --force-with-lease=main:"${old}" origin HEAD:main
+          fi
+          commit=$(git rev-parse HEAD)
+          if [[ "$(git ls-remote origin refs/tags/nightly | cut -f1)" == "${commit}" ]]; then
+            echo "nightly is already ${commit}" >>"${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          echo "commit=${commit}" >>"${GITHUB_OUTPUT}"
+
+  build:
+    needs: rebase
+    if: needs.rebase.outputs.commit
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: "${{ needs.rebase.outputs.commit }}", fetch-depth: 0, persist-credentials: false }
+
+      - run: brew install go sdl3 freetype fontconfig pkgconf neovim
+
+      - name: Test and build ng.app
+        run: |
+          set -euo pipefail
+          go vet ./... && go test ./... && go test -tags integration ./test/
+          macos/build-app.sh
+          ditto -c -k --keepParent macos/build/ng.app "${RUNNER_TEMP}/ng.app.zip"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: unsigned, path: "${{ runner.temp }}/ng.app.zip" }
+
+  # Signing and notarization run in gw31415/homebrew-tap, which holds the
+  # Developer ID certificate for all of Ama's apps (see its notarize/ng/).
+  sign:
+    needs: build
+    permissions:
+      id-token: write
+    uses: gw31415/homebrew-tap/.github/workflows/sign.yml@main
+    with: { app: ng, artifact: unsigned }
+
+  publish:
+    needs: [rebase, sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      COMMIT: ${{ needs.rebase.outputs.commit }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: "${{ env.COMMIT }}" }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: signed, path: "${{ runner.temp }}/signed" }
+
+      - name: Move nightly and replace its asset
+        run: |
+          set -euo pipefail
+          mkdir dist && cp "${RUNNER_TEMP}/signed/ng.app.zip" "dist/${ASSET}"
+          (cd dist && sha256sum -- * >SHA256SUMS)
+          git push --force origin "${COMMIT}:refs/tags/nightly"
+
+          notes="Unofficial macOS build of ng, rebuilt whenever this fork's main changes.
+
+          - Commit: ${COMMIT} (Shougo/ng main + the fork's macOS patch)
+          - Built: $(date -u '+%Y-%m-%d %H:%M UTC') by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Signed with a Developer ID and notarized by Apple.
+
+          Install: \`brew install --cask gw31415/tap/ng\`. Update: \`brew upgrade --cask --greedy-latest ng\`."
+          if ! gh release view nightly >/dev/null 2>&1; then
+            gh release create nightly --prerelease --verify-tag --title "ng nightly for macOS" --notes "${notes}"
+          fi
+          # --clobber replaces each asset in turn; a download in those few seconds may fail and can be retried.
+          gh release upload nightly dist/* --clobber
+          gh release edit nightly --notes "${notes}"
+          mkdir check && gh release download nightly --dir check
+          (cd check && sha256sum -c ../dist/SHA256SUMS)
+
+  check:
+    needs: [rebase, publish]
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ needs.rebase.outputs.commit }}
+    steps:
+      - name: Install the published Cask, check Gatekeeper, launch
+        run: |
+          set -euo pipefail
+          brew install --cask gw31415/tap/ng
+          app=/Applications/ng.app
+          trap 'pkill -x ng || true; brew uninstall --cask gw31415/tap/ng || true' EXIT
+
+          # It must be this run's build: Go stamps the commit into the version.
+          "${app}/Contents/MacOS/ng" --version | tee version.txt
+          grep -F "${COMMIT:0:12}" version.txt
+
+          # The point of notarization: Gatekeeper accepts the app with quarantine on.
+          xattr -p com.apple.quarantine "${app}" >/dev/null \
+            || { echo "::error::Homebrew did not keep quarantine on ${app}"; exit 1; }
+          xcrun stapler validate "${app}"
+          codesign -dvv "${app}" 2>&1 | grep -F 'Authority=Developer ID Application:'
+          if spctl --status | grep -q 'assessments enabled'; then
+            spctl --assess --type execute -vv "${app}" 2>&1 | grep -F 'source=Notarized Developer ID'
+          else
+            echo "::warning::Gatekeeper is off on this runner; skipped spctl"
+          fi
+
+          # A notarized app still asks "downloaded from the Internet, open?" on its
+          # first launch, which nobody can answer here; so drop quarantine to launch.
+          xattr -dr com.apple.quarantine "${app}"
+          # ng.app runs ng from a zsh login shell, which must find nvim (macos/README.md).
+          grep -qs 'brew shellenv' ~/.zprofile || echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >>~/.zprofile
+          open "${app}"
+          for _ in {1..20}; do pgrep -x ng >/dev/null && break; sleep 0.5; done
+          sleep 3 && pgrep -x ng >/dev/null || { echo "::error::ng.app did not stay running"; exit 1; }

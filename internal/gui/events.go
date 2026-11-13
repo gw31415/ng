@@ -18,6 +18,10 @@ import (
 // handle processes one SDL event and reports whether the window needs to
 // be presented again.
 func (a *App) handle(e event) bool {
+	if e.typ == C.SDL_EVENT_DROP_FILE && !a.attached {
+		a.pendingDrops = append(a.pendingDrops, e)
+		return false
+	}
 	if a.nv == nil {
 		return false // not connected yet; the window is still hidden
 	}
@@ -99,6 +103,7 @@ func (a *App) handle(e event) bool {
 			cursor = utf8.RuneCountInString(e.text)
 		}
 		a.preedit = paint.Preedit{Text: e.text, Cursor: cursor, SelLen: e.editLength}
+		a.suppressText = false // macOS sends no key event for keys the IME takes
 		if a.trace != nil {
 			a.tracef(time.Now(), "preedit %q cursor=%d sel=%d", e.text, e.editStart, e.editLength)
 		}

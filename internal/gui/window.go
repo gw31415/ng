@@ -8,6 +8,7 @@ import "C"
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"time"
 )
 
@@ -40,6 +41,9 @@ func (a *App) dpi() float64 {
 	s := float64(C.SDL_GetWindowDisplayScale(a.win))
 	if s <= 0 {
 		s = 1
+	}
+	if runtime.GOOS == "darwin" {
+		return 72 * s // macOS points
 	}
 	return 96 * s
 }

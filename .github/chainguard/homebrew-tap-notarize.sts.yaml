@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/octo-sts/app/refs/heads/main/pkg/octosts/octosts.TrustPolicy.json
+
+# Lets gw31415/homebrew-tap's notarize.yml read this repository's release runs
+# and download their unsigned ng.app (fork-only).
+issuer: https://token.actions.githubusercontent.com
+audience: octo-sts.dev
+subject_pattern: '^repo:gw31415(@24710985)?/homebrew-tap(@1369254560)?:ref:refs/heads/main$'
+
+claim_pattern:
+  repository: '^gw31415/homebrew-tap$'
+  repository_id: '^1369254560$'
+  repository_owner_id: '^24710985$'
+  event_name: '^workflow_dispatch$'
+  runner_environment: '^github-hosted$'
+  workflow_ref: '^gw31415/homebrew-tap/\.github/workflows/notarize\.yml@refs/heads/main$'
+
+permissions:
+  actions: read
